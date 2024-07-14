@@ -1,7 +1,7 @@
+"""Extend functionality of ArgumentParser class"""
 import argparse
 
 class SaneArgumentParser(argparse.ArgumentParser):
-     
     """
     Argument parser for which arguments are required on the CLI unless:
       - required=False is provided

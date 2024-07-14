@@ -1,5 +1,8 @@
 import asyncio
-import aiohttp 
+import aiohttp
+import signal
+from aiolimiter import AsyncLimiter
+ 
 import logging
 import os
 import sys
@@ -14,18 +17,30 @@ console_handler = logging.StreamHandler(sys.stdout) # sys.stderr
 console_handler.setFormatter( logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(message)s", datefmt='%Y/%m/%d %H:%M:%S') )
 logger.addHandler(console_handler)
 
-async def test():
+async def test(args):
+
     await asyncio.sleep(1000)
 
-async def publish() -> None:
+async def publish(args: argparse.Namespace) -> None:
+    async def fetch(url, session, limiter):
+        async with limiter:
+            async with session.get(url) as response:
+                return await response.text()
+    
+    
+    limiter = AsyncLimiter(max_rate=args.rate_limit, time_period=1)
+    url = 'http://python.org'
     async with aiohttp.ClientSession() as session:
-        async with session.get('http://python.org') as response:
+        tasks = [fetch(url, session, limiter) for _ in range(10)]
+        data = await asyncio.gather(*tasks)
+    logger.info(*data)
 
-            print("Status:", response.status)
-            print("Content-type:", response.headers['content-type'])
-
-            html = await response.text()
-            print("Body:", html)
+async def consume(args: argparse.Namespace, recruit_logger: logging.Logger):
+    recruit_logger = logging.getLogger("recruit")
+    discord_handler = DiscordHandler("WOT recruitement BOT", webhook_url=args.discord_recruit_url)
+    discord_handler.setFormatter(logging.Formatter(fmt="%(message)s", datefmt='%Y/%m/%d %H:%M:%S'))
+    recruit_logger.addHandler(discord_handler) 
+    recruit_logger.setLevel(logging.INFO)
 
 async def shutdown(signal, loop) -> None:
     """Cleanup tasks tied to the service's shutdown."""
@@ -42,23 +57,21 @@ async def shutdown(signal, loop) -> None:
     
 def get_arguments() -> argparse.Namespace:
     parser = saneArgumentParser.SaneArgumentParser(prog="Wot_recruitement_bot", description="Query WOT server for members leaving clans and post it in specified Deiscord channels.")
-    parser.add_argument('--rate-limit', type=int, help="Rate limit in Requests per Second of the Wargames API.", default=os.environ.get("WOT_RATE_LIMIT", 10))
-    parser.add_argument('--log-level', choices=['critical', 'warning', 'error', 'info', 'debug'], help="Verbosity of logging", default="info")
-    parser.add_argument('--discord-logging-url', type=str, help="Discord webhook to send logging data to")
-    # parser.add_argument('--url', type=str, help="Wargames API url", default=os.environ.get("WOT_API_URL"))
     
+    parser.add_argument('--log-level', choices=['critical', 'warning', 'error', 'info', 'debug'], help="Verbosity of logging", default="info")
+
+    parser.add_argument('--rate-limit', type=int, help="Rate limit in Requests per Second of the Wargames API.", default=os.environ.get("WOT_RATE_LIMIT", 10))
+    parser.add_argument('--discord-logging-url', type=str, help="Discord channel to send logging data to", default=os.environ.get("DISCORD_LOGGING_WEBHOOK"))
+    parser.add_argument('--discord-recruit-url', type=str, help="Discord channel to send recruit information to", default=os.environ.get("DISCORD_RECRUITMENT_WEBHOOK"))
+        
     args = parser.parse_args()
     
     logger.setLevel(args.log_level.upper()) # parse_args will throw an exception if there is an invalid log_level value
-    if args.discord_logging_url:
-        discord_handler = DiscordHandler("WOT recruitement BOT", webhook_url=args.discord_logging_url)
-        discord_handler.setFormatter(logging.Formatter(fmt="%(message)s", datefmt='%Y/%m/%d %H:%M:%S'))
-        logger.addHandler(discord_handler) 
-        logger.warning("warning")
-        logger.critical("critical")
-        logger.error("error")
-        logger.info("info")
-        logger.debug("Attached discord logger")        
+    # if args.discord_logging_url:
+    #     discord_handler = DiscordHandler("WOT recruitement BOT", webhook_url=args.discord_logging_url)
+    #     discord_handler.setFormatter(logging.Formatter(fmt="%(message)s", datefmt='%Y/%m/%d %H:%M:%S'))
+    #     logger.addHandler(discord_handler) 
+    #     logger.debug("Attached discord logger")        
     logger.debug(args)
 
     return args
@@ -77,7 +90,7 @@ def main() -> None:
         
     try:
         logger.info("Starting App")
-        loop.create_task(test())  # get data from wargames
+        loop.create_task(publish(args))  # get data from wargames
         # loop.create_task(consume(queue)) # publish changes in data to discord
         loop.run_forever()
     finally:

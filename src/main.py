@@ -22,7 +22,7 @@ console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(messag
 console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
 
-async def test(args):
+async def test():
     """testing purposes only"""
     await asyncio.sleep(1000)
 
@@ -120,7 +120,7 @@ def main() -> None:
 
     try:
         logger.info("Starting App")
-        loop.create_task(test(args))  # get data from wargames
+        loop.create_task(test())  # get data from wargames
         # loop.create_task(consume(queue)) # publish changes in data to discord
         loop.run_forever()
     finally:

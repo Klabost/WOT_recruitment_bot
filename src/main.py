@@ -49,9 +49,9 @@ async def consume(args: argparse.Namespace, recruit_logger: logging.Logger):
     recruit_logger.addHandler(discord_handler)
     recruit_logger.setLevel(logging.INFO)
 
-async def shutdown(signal, loop) -> None:
+async def shutdown(sig, loop) -> None:
     """Cleanup tasks tied to the service's shutdown."""
-    logger.info("Received exit signal %s ...", signal.name)
+    logger.info("Received exit signal %s ...", sig.name)
     tasks = [t for t in asyncio.all_tasks() if t is not
              asyncio.current_task()]
 
@@ -97,7 +97,7 @@ def get_arguments() -> argparse.Namespace:
 
     logger.setLevel(args.log_level.upper())
     if args.discord_logging_url:
-        discord_handler = DiscordHandler(service_name="WOT recruitement BOT", 
+        discord_handler = DiscordHandler(service_name="WOT recruitement BOT",
                                          webhook_url=args.discord_logging_url)
         discord_formatter = logging.Formatter(fmt="%(message)s",
                                               datefmt='%Y/%m/%d %H:%M:%S')
@@ -110,7 +110,7 @@ def get_arguments() -> argparse.Namespace:
 
 def main() -> None:
     """main"""
-    args = get_arguments()
+    # args = get_arguments()
     # queue = asyncio.Queue()
     loop = asyncio.get_event_loop()
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)

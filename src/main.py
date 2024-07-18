@@ -16,8 +16,8 @@ from aiolimiter import AsyncLimiter
 from discord_logging.handler import DiscordHandler
 from pydantic import ValidationError
 from sane_argument_parser import SaneArgumentParser
-from clan_data import Clan
-from utils.const import CLAN_URL, CLAN_ID_UPDATE_INTERVAL
+from clan_data import Clan, Member
+from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,15 @@ console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(messag
 console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
 
-async def fetch(url,  session, limiter, params=None):
-    """ fetch data from url"""
-    async with limiter:
-        async with session.get(url, params=params) as response:
-            return await response.json()
+# seperate logger for potential  recruits
+recruit_logger = logging.getLogger("recruit")
+recruit_logger.setLevel(logging.INFO)
 
-async def fetch_ids(session, limiter, clan: Clan, clans: List[Clan], app_id: str):
+async def fetch_ids(app_id: str,
+                    session: aiohttp.ClientSession,
+                    limiter: AsyncLimiter,
+                    clan: Clan,
+                    clans: List[Clan]):
     """ fetch clan data based on clan name, 
     if the clan name return multiple values. all values will be added"""
     current_page = 1
@@ -48,33 +50,36 @@ async def fetch_ids(session, limiter, clan: Clan, clans: List[Clan], app_id: str
             async with session.get(CLAN_URL, params=params) as response:
                 response = await response.json()
 
-            logger.debug("Parsing response: %s", response)
-            if response.get('status') != 'ok':
-                logger.error("query failed: %s", response.get('error'))
-                break
-            if response.get('meta').get('count') == 0:
-                logger.error("No result for query: %s", clan.name)
-                break
-            if current_page == 1 and total_pages == 1:
-                # ceiling division. determine total amount of pages
-                count = response.get('meta').get('count')
-                total = response.get('meta').get('total')
-                total_pages = -1 * (-1*total // count)
-            for entry in response.get('data'):
-                if entry.get("name") == clan.name:
-                    clan.clan_id = entry.get("clan_id")
-                    logger.info("Found clan_id: %s for clan name: %s", clan.clan_id, clan.name)
-                else:
-                    new_clan = Clan(name=entry.get("name"), clan_id=entry.get("clan_id"))
-                    logger.info("Found new clan with clan_id: %s and clan name: %s",
-                                new_clan.clan_id, new_clan.name)
-                    clans.append(new_clan)
+        logger.debug("Parsing response: %s", response)
+        if response.get('status') != 'ok':
+            logger.error("query failed: %s", response.get('error'))
+            break
+        if response.get('meta').get('count') == 0:
+            logger.error("No result for query: %s, will remove from list", clan.name)
+            clans.remove(clan)
+            break
+        if current_page == 1 and total_pages == 1:
+            # ceiling division. determine total amount of pages
+            count = response.get('meta').get('count')
+            total = response.get('meta').get('total')
+            total_pages = -1 * (-1*total // count)
+            logger.debug("Found {%d} page(s) in query", total_pages)
+        for entry in response.get('data'):
+            if entry.get("name") == clan.name:
+                clan.clan_id = entry.get("clan_id")
+                logger.info("Found clan_id: %s for clan name: %s", clan.clan_id, clan.name)
+            else:
+                new_clan = Clan(name=entry.get("name"), clan_id=entry.get("clan_id"))
+                logger.info("Found new clan with clan_id: %s and clan name: %s",
+                            new_clan.clan_id, new_clan.name)
+                clans.append(new_clan)
         current_page += 1
 
 async def get_clan_ids(app_id: str,
                        clans: List[Clan],
                        lock: asyncio.Lock,
-                       limiter: AsyncLimiter) -> None:
+                       limiter: AsyncLimiter,
+                       update_interval: int) -> None:
     """Will query Wargames"""
     while True:
         async with lock:
@@ -83,20 +88,74 @@ async def get_clan_ids(app_id: str,
                 for clan in clans:
                     logger.info("Fetching Clan Data, Name: %s", clan.name)
                     tasks.append(
-                        fetch_ids(session, limiter, clan, clans, app_id)
+                        fetch_ids(app_id, session, limiter, clan, clans)
                     )
                 await asyncio.gather(*tasks)
-        if CLAN_ID_UPDATE_INTERVAL == 0:
+        if update_interval == 0:
             break
-        await asyncio.sleep(CLAN_ID_UPDATE_INTERVAL)
+        await asyncio.sleep(update_interval)
 
-async def consume(args: argparse.Namespace, recruit_logger: logging.Logger):
-    """Will push to Discord"""
-    recruit_logger = logging.getLogger("recruit")
-    discord_handler = DiscordHandler("WOT recruitement BOT", webhook_url=args.discord_recruit_url)
-    discord_handler.setFormatter(logging.Formatter(fmt="%(message)s", datefmt='%Y/%m/%d %H:%M:%S'))
-    recruit_logger.addHandler(discord_handler)
-    recruit_logger.setLevel(logging.INFO)
+def parse_difference_member_list(old_list: List[Member], current_list: List[Member]):
+    """Determine if members left"""
+    members_left = [member for member in old_list if member not in current_list]
+    if len(members_left) > 0:
+        logger.debug("Found members that left the clan:%s", members_left)
+    for member in members_left:
+        url = MEMBER_DETAILS_URL + member.account_name + '-' + str(member.account_id) + '/'
+        recruit_logger.info("Found potential recruit. Name: %s, Account ID: %d, Stats: %s",
+                            member.account_name, member.account_id, url)
+
+async def fetch_members(app_id: str,
+                    session: aiohttp.ClientSession,
+                    limiter: AsyncLimiter,
+                    clan: Clan):
+    """ fetch clan members data based on clan id"""
+    async with limiter:
+        params = {'application_id': app_id,
+                'clan_id': clan.clan_id,
+                "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
+                }
+        async with session.get(CLAN_DETAILS_URL, params=params) as response:
+            response = await response.json()
+
+    logger.debug("Parsing response: %s", response)
+    if response.get('status') != 'ok':
+        logger.error("query failed: %s", response.get('error'))
+        return
+    if response.get('meta').get('count') == 0:
+        logger.error("No result for query name: %s, id: %d", clan.name, clan.clan_id)
+        return
+    new_data = response.get("data").get(str(clan.clan_id))
+    try:
+        tmpclan = Clan(**new_data)
+        if clan.members is not None and clan.members != tmpclan.members:
+            parse_difference_member_list(clan.members, tmpclan.members)
+            logger.info("Members list updated of Clan %s with ID %d", clan.name, clan.clan_id)
+        clan.update_values(tmpclan)
+        logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
+    except ValidationError as ve:
+        logger.error("Error parsing data from Clan %s with id %d, with error %s",
+                     clan.name, clan.clan_id, ve.args)
+
+async def get_members(app_id: str,
+                      clans: List[Clan],
+                      lock: asyncio.Lock,
+                      limiter: AsyncLimiter,
+                      update_interval: int) -> None:
+    """query members from clan"""
+    while True:
+        async with lock:
+            async with aiohttp.ClientSession() as session:
+                tasks = []
+                for clan in clans:
+                    logger.info("Fetching Members Data from: %s", clan.name)
+                    tasks.append(
+                        fetch_members(app_id, session, limiter, clan)
+                    )
+                await asyncio.gather(*tasks)
+        if update_interval == 0:
+            break
+        await asyncio.sleep(update_interval)
 
 async def shutdown(sig: signal.signal, loop: asyncio.BaseEventLoop) -> None:
     """Cleanup tasks tied to the service's shutdown."""
@@ -142,6 +201,16 @@ def get_arguments() -> argparse.Namespace:
                         type=str,
                         help=" id of your Wargaming application",
                         default=os.environ.get("APPLICATION_ID"))
+    parser.add_argument("--clan-id-update-interval",
+                        type=int,
+                        help="Update Clan id associated with clan name. \
+                            Time interval is in seconds, default is once a week",
+                        default=os.environ.get("CLAN_ID_UPDATE_INTERVAL", 60*60*24*7))
+    parser.add_argument("--members-update-interval",
+                        type=int,
+                        help="Update members list from clans. \
+                            Time interval is in seconds, default is once a day",
+                        default=os.environ.get("MEMBERS_UPDATE_INTERVAL", 60*60*24))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level.upper())
@@ -151,10 +220,17 @@ def get_arguments() -> argparse.Namespace:
         discord_formatter = logging.Formatter(fmt="%(message)s",
                                               datefmt='%Y/%m/%d %H:%M:%S')
         discord_handler.setFormatter(discord_formatter)
-        # logger.addHandler(discord_handler)
+        logger.addHandler(discord_handler)
         logger.debug("Attached discord logger")
+    if args.discord_recruit_url:
+        recruit_handler = DiscordHandler("WOT recruitement BOT",
+                                         webhook_url=args.discord_recruit_url)
+        recruit_formatter = logging.Formatter(fmt="%(message)s",
+                                              datefmt='%Y/%m/%d %H:%M:%S')
+        recruit_handler.setFormatter(recruit_formatter)
+        recruit_logger.addHandler(recruit_handler)
+        logger.debug("Added discord handler to recruit logger")
     logger.debug(args)
-
     return args
 
 def read_file(filename: str) -> List[Clan]:
@@ -214,13 +290,15 @@ def main() -> None:
         lock = asyncio.Lock()  # lock before you access and edit clan_data
 
          # get id numbers from clan name from wargames
-        loop.create_task(get_clan_ids(args.id, clan_data, lock, limiter))
-        # loop.create_task(consume(queue)) # publish changes in data to discord
+        loop.create_task(get_clan_ids(args.id, clan_data, lock,
+                                      limiter, args.clan_id_update_interval))
+        loop.create_task(get_members(args.id, clan_data, lock,
+                                     limiter, args.clan_id_update_interval))
         loop.run_forever()
     finally:
         loop.close()
         logger.info("Successfully shutdown the WOT recruitment Bot.")
-        # store_file(clan_data, args.data_file)
+        store_file(clan_data, args.data_file)
         sys.exit(0)
 
 if __name__ == "__main__":

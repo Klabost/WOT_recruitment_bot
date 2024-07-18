@@ -47,8 +47,13 @@ async def fetch_ids(app_id: str,
                     'page_no': current_page,
                     "fields": "name,clan_id"
                     }
-            async with session.get(CLAN_URL, params=params) as response:
-                response = await response.json()
+            try:
+                async with session.get(CLAN_URL, params=params) as response:
+                    response = await response.json()
+            except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
+                    aiohttp.ClientConnectorError ) as se:
+                logger.error("Error fetching member Data. msg: %s", se.message)
+                continue
 
         logger.debug("Parsing response: %s", response)
         if response.get('status') != 'ok':
@@ -115,8 +120,13 @@ async def fetch_members(app_id: str,
                 'clan_id': clan.clan_id,
                 "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
                 }
-        async with session.get(CLAN_DETAILS_URL, params=params) as response:
-            response = await response.json()
+        try:
+            async with session.get(CLAN_DETAILS_URL, params=params) as response:
+                response = await response.json()
+        except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
+                aiohttp.ClientConnectorError ) as se:
+            logger.error("Error fetching member Data. msg: %s", se.message)
+            return
 
     logger.debug("Parsing response: %s", response)
     if response.get('status') != 'ok':

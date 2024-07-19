@@ -14,8 +14,10 @@ from aiolimiter import AsyncLimiter
 
 from discord_logging.handler import DiscordHandler
 from pydantic import ValidationError
+from discord import Webhook
+
 from sane_argument_parser import SaneArgumentParser
-from clan_data import Clan, Member
+from clan_data import Clan
 from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME
 from utils.storage import read_file, store_file
 
@@ -26,10 +28,6 @@ console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(messag
                                    datefmt='%Y/%m/%d %H:%M:%S')
 console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
-
-# seperate logger for potential  recruits
-recruit_logger = logging.getLogger("recruit")
-recruit_logger.setLevel(logging.INFO)
 
 async def fetch(url: str,
                 params: dict,
@@ -120,17 +118,29 @@ async def get_clan_ids(app_id: str,
             break
         await asyncio.sleep(update_interval)
 
-def parse_difference_member_list(old_list: List[Member], current_list: List[Member]):
-    """Determine if members left"""
-    members_left = [member for member in old_list if member not in current_list]
-    if len(members_left) > 0:
-        logger.debug("Found members that left the clan:%s", members_left)
-    for member in members_left:
-        url = MEMBER_DETAILS_URL + member.account_name + '-' + str(member.account_id) + '/'
-        recruit_logger.info("Found potential recruit. Name: %s, Account ID: %d, Stats: %s",
-                            member.account_name, member.account_id, url)
+async def recruit_members(queue: asyncio.Queue, url: str) -> None:
+    """Send recruit data to discord channel.
+    Webhooks are rate limited to 30 message per minute
+    according to stackoverflow"""
+    limiter = AsyncLimiter(30, 60)
+    while True:
+        member = await queue.get()
+        logger.debug("Sending %s information to discord", member.account_name)
+        try:
+            async with limiter:
+                async with aiohttp.ClientSession() as session:
+                    webhook = Webhook.from_url(url, session=session)
+                    stat_url = f"{MEMBER_DETAILS_URL}/{member.account_name}-{member.account_id}/"
+                    message = (f"Member found. Name: {member.account_name}, "
+                               f"ID: {member.account_id}, stats: {stat_url}")
+                    await webhook.send(message, username='WOT_BOT')
+        except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
+                aiohttp.ClientConnectorError ) as se:
+            logger.error("Error sending Data to discord recruit channel. Error: %s",se.message)
+        finally:
+            queue.task_done()
 
-async def parse_members(queue: asyncio.Queue):
+async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
     """ parses data retrieved by feth_ids"""
     while True:
         clan, response = await queue.get()
@@ -152,8 +162,12 @@ async def parse_members(queue: asyncio.Queue):
         try:
             tmpclan = Clan(**new_data)
             if clan.members is not None and clan.members != tmpclan.members:
-                parse_difference_member_list(clan.members, tmpclan.members)
+                for member in clan.members:
+                    if member not in tmpclan.members:
+                        logger.debug("Found member that left the clan: %s", member)
+                        await recruit_queue.put(member)
                 logger.info("Members list updated of Clan %s with ID %d", clan.name, clan.clan_id)
+
             clan.update_values(tmpclan)
             logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
         except ValidationError as ve:
@@ -260,14 +274,6 @@ def get_arguments() -> argparse.Namespace:
         discord_handler.setFormatter(discord_formatter)
         logger.addHandler(discord_handler)
         logger.debug("Attached discord logger")
-    if args.discord_recruit_url:
-        recruit_handler = DiscordHandler("WOT recruitement BOT",
-                                         webhook_url=args.discord_recruit_url)
-        recruit_formatter = logging.Formatter(fmt="%(message)s",
-                                              datefmt='%Y/%m/%d %H:%M:%S')
-        recruit_handler.setFormatter(recruit_formatter)
-        recruit_logger.addHandler(recruit_handler)
-        logger.debug("Added discord handler to recruit logger")
     logger.debug(args)
     return args
 
@@ -293,9 +299,11 @@ def main() -> None:
         loop.create_task(parse_clan_ids(clan_data, clan_queue))
 
         members_queue = asyncio.Queue()
+        recruits_queue = asyncio.Queue()
         loop.create_task(get_members(args.id, clan_data, limiter,
                                      args.clan_id_update_interval, members_queue))
-        loop.create_task(parse_members(members_queue))
+        loop.create_task(parse_members(members_queue, recruits_queue))
+        loop.create_task(recruit_members(recruits_queue, args.discord_recruit_url))
         loop.run_forever()
     finally:
         loop.close()

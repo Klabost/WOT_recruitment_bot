@@ -128,7 +128,7 @@ When using the app with docker compose, put all the environmental variables insi
 Rename the supplied env.example to .env and set the values that you want to use.
 If all the previous steps where taken then you only need to run.
 
-Small tip. The user inside the docker container is 999, so make sure it has writing permissions for the datafile.
+Quick tip. The user inside the docker container is 999, so make sure it has writing permissions for the datafile.
 ```sh
 docker compose up -d 
 ```

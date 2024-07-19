@@ -303,7 +303,9 @@ def get_arguments() -> argparse.Namespace:
         discord_formatter = logging.Formatter(fmt="%(message)s",
                                               datefmt='%Y/%m/%d %H:%M:%S')
         discord_handler.setFormatter(discord_formatter)
-        logger.addHandler(discord_handler)
+        if args.log_level.upper() != "DEBUG":
+            # debug logs overwhelm the Discord webhook for larger clan lists
+            logger.addHandler(discord_handler)
         logger.debug("Attached discord logger")
     logger.debug(args)
     return args

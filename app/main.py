@@ -177,7 +177,7 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
             if clan.members is not None and clan.members != tmpclan.members:
                 for member in clan.members:
                     if member not in tmpclan.members:
-                        logger.debug("Found member that left the clan: %s", member)
+                        logger.info("Found member that left the clan: %s", member)
                         await recruit_queue.put(('left', member))
             if not clan.is_clan_disbanded and tmpclan.is_clan_disbanded:
                 logger.info("Clan %s disbanded, All members are potential recruits", clan.name)

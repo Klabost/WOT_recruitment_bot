@@ -1,10 +1,5 @@
 FROM python:3.10.12-slim-bullseye
 
-ENV TINI_VERSION="v0.19.0"
-
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
-RUN chmod +x /tini
-
 RUN pip install -U \
     pip \
     setuptools \
@@ -22,4 +17,4 @@ COPY app/ /app
 
 USER user
 
-ENTRYPOINT ["/tini", "--", "python3", "main.py"]
+ENTRYPOINT ["python3", "main.py"]

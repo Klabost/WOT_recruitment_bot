@@ -120,7 +120,9 @@ The docker compose file will use this .env file to supply the python application
 
 # Running the App
 
-If all the previous steps where taken then you only need to run
+If all the previous steps where taken then you only need to run.
+
+Small tip. The user inside the docker container is 999, so make sure it has writing permissions for the datafile.
 ```sh
 docker compose up -d 
 ```

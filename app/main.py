@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from discord import Webhook
 
 from sane_argument_parser import SaneArgumentParser
-from clan_data import Clan, Member
+from clan_data import Clan
 from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME
 from utils.storage import read_file, store_file
 
@@ -299,7 +299,7 @@ def get_arguments() -> argparse.Namespace:
         logger.debug("Attached discord logger")
     logger.debug(args)
     return args
-  
+
 def main() -> None:
     """main"""
     args = get_arguments()

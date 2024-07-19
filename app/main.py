@@ -69,6 +69,9 @@ async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue, lock: asyncio.
                 logger.info("Found clan_id: %s for clan name: %s", clan.clan_id, clan.name)
             else:
                 new_clan = Clan(name=entry.get("name"), clan_id=entry.get("clan_id"))
+                if new_clan in clans:
+                    logger.debug("Double entry: %s", new_clan.name)
+                    continue
                 logger.info("Found new clan with clan_id: %s and clan name: %s",
                             new_clan.clan_id, new_clan.name)
                 async with lock:
@@ -82,10 +85,7 @@ async def fetch_ids(app_id: str,
                     queue: asyncio.Queue):
     """ fetch clan data based on clan name,
     if the clan name return multiple values. all values will be added"""
-    if clan.clan_id != 0:
-        logger.debug("Skipping Clan %s, already have clan ID %s",
-                    clan.name, clan.clan_id)
-        return
+
     current_page = 1
     total_pages = 1
     while current_page <= total_pages:
@@ -118,6 +118,10 @@ async def get_clan_ids(app_id: str,
             async with lock:
                 logger.info("Updating Clan list")
                 for clan in clans:
+                    if clan.clan_id != 0:
+                        logger.debug("Skipping Clan %s, already have clan ID %s",
+                                    clan.name, clan.clan_id)
+                        continue
                     logger.debug("Fetching Clan ID, Name: %s", clan.name)
                     tasks.append(
                         fetch_ids(app_id, session, limiter, clan, queue)
@@ -178,7 +182,8 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
             if clan.members is not None and clan.members != tmpclan.members:
                 for member in clan.members:
                     if member not in tmpclan.members:
-                        logger.info("Found member that left the clan: %s", member)
+                        logger.info("Found member %s that left the clan: %s",
+                                    member.account_name, clan.name)
                         await recruit_queue.put(('left', member))
             if not clan.is_clan_disbanded and tmpclan.is_clan_disbanded:
                 logger.info("Clan %s disbanded, All members are potential recruits", clan.name)
@@ -191,7 +196,8 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
                         clan.name, clan.clan_id, ve.args)
         except TypeError as te:
             logger.error("Error while parsing member data. Error: %s", te.args)
-        queue.task_done()
+        finally:
+            queue.task_done()
 
 async def fetch_members(app_id: str,
                     session: aiohttp.ClientSession,
@@ -297,7 +303,7 @@ def get_arguments() -> argparse.Namespace:
         discord_formatter = logging.Formatter(fmt="%(message)s",
                                               datefmt='%Y/%m/%d %H:%M:%S')
         discord_handler.setFormatter(discord_formatter)
-        # logger.addHandler(discord_handler)
+        logger.addHandler(discord_handler)
         logger.debug("Attached discord logger")
     logger.debug(args)
     return args

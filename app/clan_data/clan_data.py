@@ -38,3 +38,12 @@ class Clan(BaseModel, str_strip_whitespace=True):
             if not v or v.isspace():
                 return 0
         return int(v)
+    
+    @field_validator('is_clan_disbanded', mode='before')
+    @classmethod
+    def empty_string_to_bool(cls, v: Union[str,bool, int]) -> int:
+        """If is_clan_disbanded is an empty string return False"""
+        if isinstance(v, str):
+            if not v or v.isspace():
+                return False
+        return bool(v)

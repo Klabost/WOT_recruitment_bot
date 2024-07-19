@@ -1,4 +1,4 @@
-"""BOT that queries wargames clans. and if members apear to have left 
+"""BOT that queries wargames clans. and if members apear to have left
    a clan then their username will be posted in a discord channel"""
 
 import signal
@@ -79,7 +79,7 @@ async def fetch_ids(app_id: str,
                     limiter: AsyncLimiter,
                     clan: Clan,
                     queue: asyncio.Queue):
-    """ fetch clan data based on clan name, 
+    """ fetch clan data based on clan name,
     if the clan name return multiple values. all values will be added"""
     current_page = 1
     total_pages = 1

@@ -6,7 +6,6 @@ import logging
 import os
 import sys
 import argparse
-import csv
 
 import asyncio
 from typing import List
@@ -17,9 +16,10 @@ from discord_logging.handler import DiscordHandler
 from pydantic import ValidationError
 from sane_argument_parser import SaneArgumentParser
 from clan_data import Clan, Member
-from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL
+from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME
+from utils.storage import read_file, store_file
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(LOGGER_NAME)
 
 console_handler = logging.StreamHandler(sys.stdout) # sys.stderr
 console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(message)s",
@@ -31,44 +31,40 @@ logger.addHandler(console_handler)
 recruit_logger = logging.getLogger("recruit")
 recruit_logger.setLevel(logging.INFO)
 
-async def fetch_ids(app_id: str,
-                    session: aiohttp.ClientSession,
-                    limiter: AsyncLimiter,
-                    clan: Clan,
-                    clans: List[Clan]):
-    """ fetch clan data based on clan name, 
-    if the clan name return multiple values. all values will be added"""
-    current_page = 1
-    total_pages = 1
-    while current_page <= total_pages:
-        async with limiter:
-            params = {'application_id': app_id,
-                    'search': clan.name,
-                    'page_no': current_page,
-                    "fields": "name,clan_id"
-                    }
-            try:
-                async with session.get(CLAN_URL, params=params) as response:
-                    response = await response.json()
-            except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
-                    aiohttp.ClientConnectorError ) as se:
-                logger.error("Error fetching member Data. msg: %s", se.message)
-                continue
+async def fetch(url: str,
+                params: dict,
+                session: aiohttp.ClientSession,
+                limiter:AsyncLimiter) -> dict:
+    """Performs webrequests"""
+    async with limiter:
+        try:
+            async with session.get(url, params=params) as response:
+                response = await response.json()
+                return response
+        except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
+                aiohttp.ClientConnectorError ) as se:
+            logger.error("Error fetching member Data. msg: %s", se.message)
+            return {}
 
+async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue):
+    """ parses data retrieved by feth_ids"""
+    while True:
+        clan, response = await queue.get()
         logger.debug("Parsing response: %s", response)
+
+        if len(response) == 0:
+            logger.error("Empty response for Clan: %s", clan.name)
+            queue.task_done()
+            continue
         if response.get('status') != 'ok':
             logger.error("query failed: %s", response.get('error'))
-            break
+            queue.task_done()
+            continue
         if response.get('meta').get('count') == 0:
             logger.error("No result for query: %s, will remove from list", clan.name)
             clans.remove(clan)
-            break
-        if current_page == 1 and total_pages == 1:
-            # ceiling division. determine total amount of pages
-            count = response.get('meta').get('count')
-            total = response.get('meta').get('total')
-            total_pages = -1 * (-1*total // count)
-            logger.debug("Found {%d} page(s) in query", total_pages)
+            queue.task_done()
+            continue
         for entry in response.get('data'):
             if entry.get("name") == clan.name:
                 clan.clan_id = entry.get("clan_id")
@@ -78,24 +74,48 @@ async def fetch_ids(app_id: str,
                 logger.info("Found new clan with clan_id: %s and clan name: %s",
                             new_clan.clan_id, new_clan.name)
                 clans.append(new_clan)
+        queue.task_done()
+
+async def fetch_ids(app_id: str,
+                    session: aiohttp.ClientSession,
+                    limiter: AsyncLimiter,
+                    clan: Clan,
+                    queue: asyncio.Queue):
+    """ fetch clan data based on clan name, 
+    if the clan name return multiple values. all values will be added"""
+    current_page = 1
+    total_pages = 1
+    while current_page <= total_pages:
+        params = {'application_id': app_id,
+                'search': clan.name,
+                'page_no': current_page,
+                "fields": "name,clan_id"
+                }
+        response = await fetch(CLAN_URL, params, session, limiter)
+        if len(response) != 0 and current_page == 1 and total_pages == 1:
+            # ceiling division. determine total amount of pages
+            count = response.get('meta').get('count')
+            total = response.get('meta').get('total')
+            total_pages = -1 * (-1*total // count)
+            logger.debug("Found {%d} page(s) in query", total_pages)
+        await queue.put((clan, response))
         current_page += 1
 
 async def get_clan_ids(app_id: str,
                        clans: List[Clan],
-                       lock: asyncio.Lock,
                        limiter: AsyncLimiter,
-                       update_interval: int) -> None:
+                       update_interval: int,
+                       queue: asyncio.Queue) -> None:
     """Will query Wargames"""
     while True:
-        async with lock:
-            async with aiohttp.ClientSession() as session:
-                tasks = []
-                for clan in clans:
-                    logger.info("Fetching Clan Data, Name: %s", clan.name)
-                    tasks.append(
-                        fetch_ids(app_id, session, limiter, clan, clans)
-                    )
-                await asyncio.gather(*tasks)
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for clan in clans:
+                logger.info("Fetching Clan Data, Name: %s", clan.name)
+                tasks.append(
+                    fetch_ids(app_id, session, limiter, clan, queue)
+                )
+            await asyncio.gather(*tasks)
         if update_interval == 0:
             break
         await asyncio.sleep(update_interval)
@@ -110,59 +130,67 @@ def parse_difference_member_list(old_list: List[Member], current_list: List[Memb
         recruit_logger.info("Found potential recruit. Name: %s, Account ID: %d, Stats: %s",
                             member.account_name, member.account_id, url)
 
+async def parse_members(queue: asyncio.Queue):
+    """ parses data retrieved by feth_ids"""
+    while True:
+        clan, response = await queue.get()
+        logger.debug("Parsing response: %s", response)
+
+        if len(response) == 0:
+            logger.error("Empty response for Clan: %s", clan.name)
+            queue.task_done()
+            continue
+        if response.get('status') != 'ok':
+            logger.error("query failed: %s", response.get('error'))
+            queue.task_done()
+            continue
+        if response.get('meta').get('count') == 0:
+            logger.error("No result for query name: %s, id: %d", clan.name, clan.clan_id)
+            queue.task_done()
+            continue
+        new_data = response.get("data").get(str(clan.clan_id))
+        try:
+            tmpclan = Clan(**new_data)
+            if clan.members is not None and clan.members != tmpclan.members:
+                parse_difference_member_list(clan.members, tmpclan.members)
+                logger.info("Members list updated of Clan %s with ID %d", clan.name, clan.clan_id)
+            clan.update_values(tmpclan)
+            logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
+        except ValidationError as ve:
+            logger.error("Error parsing data from Clan %s with id %d, with error %s",
+                        clan.name, clan.clan_id, ve.args)
+        queue.task_done()
+
 async def fetch_members(app_id: str,
                     session: aiohttp.ClientSession,
                     limiter: AsyncLimiter,
-                    clan: Clan):
+                    clan: Clan,
+                    queue: asyncio.Queue):
     """ fetch clan members data based on clan id"""
-    async with limiter:
-        params = {'application_id': app_id,
-                'clan_id': clan.clan_id,
-                "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
-                }
-        try:
-            async with session.get(CLAN_DETAILS_URL, params=params) as response:
-                response = await response.json()
-        except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
-                aiohttp.ClientConnectorError ) as se:
-            logger.error("Error fetching member Data. msg: %s", se.message)
-            return
-
-    logger.debug("Parsing response: %s", response)
-    if response.get('status') != 'ok':
-        logger.error("query failed: %s", response.get('error'))
+    if not clan.clan_id or clan.clan_id == 0:
         return
-    if response.get('meta').get('count') == 0:
-        logger.error("No result for query name: %s, id: %d", clan.name, clan.clan_id)
-        return
-    new_data = response.get("data").get(str(clan.clan_id))
-    try:
-        tmpclan = Clan(**new_data)
-        if clan.members is not None and clan.members != tmpclan.members:
-            parse_difference_member_list(clan.members, tmpclan.members)
-            logger.info("Members list updated of Clan %s with ID %d", clan.name, clan.clan_id)
-        clan.update_values(tmpclan)
-        logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
-    except ValidationError as ve:
-        logger.error("Error parsing data from Clan %s with id %d, with error %s",
-                     clan.name, clan.clan_id, ve.args)
+    params = {'application_id': app_id,
+            'clan_id': clan.clan_id,
+            "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
+            }
+    response = await fetch(CLAN_DETAILS_URL, params, session, limiter)
+    await queue.put((clan, response))
 
 async def get_members(app_id: str,
                       clans: List[Clan],
-                      lock: asyncio.Lock,
                       limiter: AsyncLimiter,
-                      update_interval: int) -> None:
+                      update_interval: int,
+                      queue: asyncio.Queue) -> None:
     """query members from clan"""
     while True:
-        async with lock:
-            async with aiohttp.ClientSession() as session:
-                tasks = []
-                for clan in clans:
-                    logger.info("Fetching Members Data from: %s", clan.name)
-                    tasks.append(
-                        fetch_members(app_id, session, limiter, clan)
-                    )
-                await asyncio.gather(*tasks)
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for clan in clans:
+                logger.info("Fetching Members Data from: %s", clan.name)
+                tasks.append(
+                    fetch_members(app_id, session, limiter, clan, queue)
+                )
+            await asyncio.gather(*tasks)
         if update_interval == 0:
             break
         await asyncio.sleep(update_interval)
@@ -243,46 +271,6 @@ def get_arguments() -> argparse.Namespace:
     logger.debug(args)
     return args
 
-def read_file(filename: str) -> List[Clan]:
-    """ read file contain clan names and store it in a dataframe"""
-    try:
-        logger.info("Parsing data file: %s", filename)
-        with open(filename, "r", encoding="utf-8") as csvfile:
-            reader = csv.DictReader(csvfile)
-            clans = []
-            for row in reader:
-                try:
-                    logger.debug("File Contents: %s", row)
-                    clan = Clan(**row)
-                    clans.append(clan)
-                    logger.debug("Clan object content: %s", clan)
-                except ValidationError as ve:
-                    logger.error("Data-file error, illegal value: %s", ve)
-            return clans
-    except FileNotFoundError as fnfe:
-        logger.error("Data-file error: %s", fnfe.args[1])
-        sys.exit(1)
-
-def store_file(clan_data: List[Clan], filename: str) -> None:
-    """Write current dataframe to csv file"""
-    if len(clan_data) == 0:
-        logger.error("Cannot store empty list")
-        return
-    try:
-        with open(filename, "w", encoding="utf-8") as csvfile:
-            headers = ["name", "clan_id", "is_clan_disbanded", "old_name"]
-            writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
-            writer.writeheader()
-            logger.debug("Writeing file, headers found: %s", headers)
-            for clan in clan_data:
-                clan_dict = clan.model_dump()
-                filtered_dict = dict((k, clan_dict[k]) for k in headers if k in clan_dict)
-                logger.debug("Clan object to dict Content: %s", filtered_dict)
-                writer.writerow(filtered_dict)
-        logger.info("Saved Current clan list to %s", filename)
-    except PermissionError as pe:
-        logger.error("Cannot Store current clan info: %s", pe.args[1])
-
 def main() -> None:
     """main"""
     args = get_arguments()
@@ -297,13 +285,17 @@ def main() -> None:
     try:
         logger.info("Starting App")
         limiter = AsyncLimiter(max_rate=args.rate_limit, time_period=1)
-        lock = asyncio.Lock()  # lock before you access and edit clan_data
 
+        clan_queue = asyncio.Queue()
          # get id numbers from clan name from wargames
-        loop.create_task(get_clan_ids(args.id, clan_data, lock,
-                                      limiter, args.clan_id_update_interval))
-        loop.create_task(get_members(args.id, clan_data, lock,
-                                     limiter, args.clan_id_update_interval))
+        loop.create_task(get_clan_ids(args.id, clan_data, limiter,
+                                      args.clan_id_update_interval, clan_queue))
+        loop.create_task(parse_clan_ids(clan_data, clan_queue))
+
+        members_queue = asyncio.Queue()
+        loop.create_task(get_members(args.id, clan_data, limiter,
+                                     args.clan_id_update_interval, members_queue))
+        loop.create_task(parse_members(members_queue))
         loop.run_forever()
     finally:
         loop.close()

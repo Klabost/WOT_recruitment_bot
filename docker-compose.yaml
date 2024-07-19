@@ -4,7 +4,7 @@ services:
     build: ./
     image: wot_bot
     volumes:
-      - ${PWD}/wot.csv:/app/wot.csv
+      - ${PWD}/${DATAFILE}:/app/${DATAFILE}
     environment:
       LOG_LEVEL: ${LOG_LEVEL}
       APPLICATION_ID: ${APPLICATION_ID}

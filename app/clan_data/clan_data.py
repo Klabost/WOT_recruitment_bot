@@ -1,6 +1,7 @@
 """storage objects"""
+from typing import Union
 from typing_extensions import Annotated
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Name = Annotated[str, Field(min_length=1)]
 
@@ -25,3 +26,15 @@ class Clan(BaseModel, str_strip_whitespace=True):
         self.old_name = other.old_name
         self.members_count = other.members_count
         self.members = other.members
+
+    @field_validator('clan_id', mode='before')
+    @classmethod
+    def empty_string_to_zero(cls, v: Union[str,int]) -> int:
+        """If clan_id is an int, return int. if its a string make it an int
+        if it's an empty string or an invalid int then return 0"""
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            if not v or v.isspace():
+                return 0
+        return int(v)

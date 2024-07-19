@@ -60,7 +60,8 @@ async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue, lock: asyncio.
             continue
         if response.get('meta').get('count') == 0:
             logger.error("No result for query: %s, will remove from list", clan.name)
-            clans.remove(clan)
+            async with lock:
+                clans.remove(clan)
             queue.task_done()
             continue
         for entry in response.get('data'):
@@ -97,8 +98,11 @@ async def fetch_ids(app_id: str,
         response = await fetch(CLAN_URL, params, session, limiter)
         if len(response) != 0 and current_page == 1 and total_pages == 1:
             # ceiling division. determine total amount of pages
-            count = response.get('meta').get('count')
-            total = response.get('meta').get('total')
+            meta = response.get('meta')
+            if not response.get('meta'):
+                return
+            count = meta.get('count')
+            total = meta.get('total')
             if count and total:
                 total_pages = -1 * (-1*total // count)
                 logger.debug("Found {%d} page(s) in query", total_pages)
@@ -207,7 +211,7 @@ async def fetch_members(app_id: str,
     """ fetch clan members data based on clan id"""
     if clan.clan_id == 0:
         logger.error("No Clan id for Clan %s yet, will wait 3 seconds", clan.name)
-        await asyncio.sleep(3)
+        await asyncio.sleep(10)
         if clan.clan_id == 0:
             logger.error("Still no clan ID for Clan %s. Quitting", clan.name)
             return
@@ -228,14 +232,23 @@ async def get_members(app_id: str,
     while True:
         async with aiohttp.ClientSession() as session:
             tasks = []
+            disbanded_clans = []
             async with lock:
                 logger.info("Fetching Member Data")
                 for clan in clans:
+                    if clan.is_clan_disbanded:
+                        disbanded_clans.append(clan)
+                        continue
                     logger.debug("Fetching Members Data from: %s", clan.name)
                     tasks.append(
                         fetch_members(app_id, session, limiter, clan, queue)
                     )
             await asyncio.gather(*tasks)
+            async with lock:
+                for clan in disbanded_clans:
+                    logger.debug("Removed disbanded clan: %s, %d for clan list",
+                                clan.name, clan.clan_id)
+                    clans.remove(clan)
         if update_interval == 0:
             break
         await asyncio.sleep(update_interval)

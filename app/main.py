@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from discord import Webhook
 
 from sane_argument_parser import SaneArgumentParser
-from clan_data import Clan
+from clan_data import Clan, Member
 from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME
 from utils.storage import read_file, store_file
 
@@ -44,11 +44,11 @@ async def fetch(url: str,
             logger.error("Error fetching member Data. msg: %s", se.message)
             return {}
 
-async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue):
+async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue, lock: asyncio.Lock):
     """ parses data retrieved by feth_ids"""
     while True:
         clan, response = await queue.get()
-        logger.debug("Parsing response: %s", response)
+        logger.debug("Parsing Clan response: %s", response)
 
         if len(response) == 0:
             logger.error("Empty response for Clan: %s", clan.name)
@@ -71,7 +71,8 @@ async def parse_clan_ids(clans: List[Clan], queue: asyncio.Queue):
                 new_clan = Clan(name=entry.get("name"), clan_id=entry.get("clan_id"))
                 logger.info("Found new clan with clan_id: %s and clan name: %s",
                             new_clan.clan_id, new_clan.name)
-                clans.append(new_clan)
+                async with lock:
+                    clans.append(new_clan)
         queue.task_done()
 
 async def fetch_ids(app_id: str,
@@ -81,6 +82,10 @@ async def fetch_ids(app_id: str,
                     queue: asyncio.Queue):
     """ fetch clan data based on clan name,
     if the clan name return multiple values. all values will be added"""
+    if clan.clan_id != 0:
+        logger.info("Skipping Clan %s, already have clan ID %s",
+                    clan.name, clan.clan_id)
+        return
     current_page = 1
     total_pages = 1
     while current_page <= total_pages:
@@ -94,8 +99,9 @@ async def fetch_ids(app_id: str,
             # ceiling division. determine total amount of pages
             count = response.get('meta').get('count')
             total = response.get('meta').get('total')
-            total_pages = -1 * (-1*total // count)
-            logger.debug("Found {%d} page(s) in query", total_pages)
+            if count and total:
+                total_pages = -1 * (-1*total // count)
+                logger.debug("Found {%d} page(s) in query", total_pages)
         await queue.put((clan, response))
         current_page += 1
 
@@ -103,16 +109,18 @@ async def get_clan_ids(app_id: str,
                        clans: List[Clan],
                        limiter: AsyncLimiter,
                        update_interval: int,
-                       queue: asyncio.Queue) -> None:
-    """Will query Wargames"""
+                       queue: asyncio.Queue,
+                       lock: asyncio.Lock) -> None:
+    """Will Fetch clan id's"""
     while True:
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for clan in clans:
-                logger.info("Fetching Clan Data, Name: %s", clan.name)
-                tasks.append(
-                    fetch_ids(app_id, session, limiter, clan, queue)
-                )
+            async with lock:
+                for clan in clans:
+                    logger.info("Fetching Clan ID, Name: %s", clan.name)
+                    tasks.append(
+                        fetch_ids(app_id, session, limiter, clan, queue)
+                    )
             await asyncio.gather(*tasks)
         if update_interval == 0:
             break
@@ -124,7 +132,7 @@ async def recruit_members(queue: asyncio.Queue, url: str) -> None:
     according to stackoverflow"""
     limiter = AsyncLimiter(30, 60)
     while True:
-        member = await queue.get()
+        reason, member = await queue.get()
         logger.debug("Sending %s information to discord", member.account_name)
         try:
             async with limiter:
@@ -132,7 +140,8 @@ async def recruit_members(queue: asyncio.Queue, url: str) -> None:
                     webhook = Webhook.from_url(url, session=session)
                     stat_url = f"{MEMBER_DETAILS_URL}/{member.account_name}-{member.account_id}/"
                     message = (f"Member found. Name: {member.account_name}, "
-                               f"ID: {member.account_id}, stats: {stat_url}")
+                               f"ID: {member.account_id}, stats: {stat_url} ",
+                               f"Reason: {reason}")
                     await webhook.send(message, username='WOT_BOT')
         except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
                 aiohttp.ClientConnectorError ) as se:
@@ -144,7 +153,7 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
     """ parses data retrieved by feth_ids"""
     while True:
         clan, response = await queue.get()
-        logger.debug("Parsing response: %s", response)
+        logger.debug("Parsing Member response: %s", response)
 
         if len(response) == 0:
             logger.error("Empty response for Clan: %s", clan.name)
@@ -158,21 +167,29 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
             logger.error("No result for query name: %s, id: %d", clan.name, clan.clan_id)
             queue.task_done()
             continue
-        new_data = response.get("data").get(str(clan.clan_id))
+        if response.get("data").get(str(clan.clan_id)) is None:
+            logger.error("No members in Clan %s, with ID: %d", clan.name, clan.clan_id)
+            queue.task_done()
+            continue
         try:
+            new_data = response.get("data").get(str(clan.clan_id))
             tmpclan = Clan(**new_data)
             if clan.members is not None and clan.members != tmpclan.members:
                 for member in clan.members:
                     if member not in tmpclan.members:
                         logger.debug("Found member that left the clan: %s", member)
-                        await recruit_queue.put(member)
-                logger.info("Members list updated of Clan %s with ID %d", clan.name, clan.clan_id)
-
+                        await recruit_queue.put(('left', member))
+            if not clan.is_clan_disbanded and tmpclan.is_clan_disbanded:
+                logger.info("Clan %s disbanded, All members are potential recruits", clan.name)
+                for member in tmpclan.members:
+                    await recruit_queue.put(("Clan disbanded", member))
             clan.update_values(tmpclan)
-            logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
+            logger.info("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
         except ValidationError as ve:
             logger.error("Error parsing data from Clan %s with id %d, with error %s",
                         clan.name, clan.clan_id, ve.args)
+        except TypeError as te:
+            logger.error("Error while parsing member data. Error: %s", te.args)
         queue.task_done()
 
 async def fetch_members(app_id: str,
@@ -181,8 +198,12 @@ async def fetch_members(app_id: str,
                     clan: Clan,
                     queue: asyncio.Queue):
     """ fetch clan members data based on clan id"""
-    if not clan.clan_id or clan.clan_id == 0:
-        return
+    if clan.clan_id == 0:
+        logger.error("No Clan id for Clan %s yet, will wait 3 seconds", clan.name)
+        await asyncio.sleep(3)
+        if clan.clan_id == 0:
+            logger.error("Still no clan ID for Clan %s. Quitting", clan.name)
+            return
     params = {'application_id': app_id,
             'clan_id': clan.clan_id,
             "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
@@ -194,16 +215,18 @@ async def get_members(app_id: str,
                       clans: List[Clan],
                       limiter: AsyncLimiter,
                       update_interval: int,
-                      queue: asyncio.Queue) -> None:
+                      queue: asyncio.Queue,
+                      lock: asyncio.Lock) -> None:
     """query members from clan"""
     while True:
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for clan in clans:
-                logger.info("Fetching Members Data from: %s", clan.name)
-                tasks.append(
-                    fetch_members(app_id, session, limiter, clan, queue)
-                )
+            async with lock:
+                for clan in clans:
+                    logger.info("Fetching Members Data from: %s", clan.name)
+                    tasks.append(
+                        fetch_members(app_id, session, limiter, clan, queue)
+                    )
             await asyncio.gather(*tasks)
         if update_interval == 0:
             break
@@ -220,7 +243,7 @@ async def shutdown(sig: signal.signal, loop: asyncio.BaseEventLoop) -> None:
 
     logger.info("Cancelling %d outstanding tasks", len(tasks))
     await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info("Flushing metrics")
+    logger.info("All tasksk successfully canceled")
     loop.stop()
 
 def get_arguments() -> argparse.Namespace:
@@ -261,8 +284,8 @@ def get_arguments() -> argparse.Namespace:
     parser.add_argument("--members-update-interval",
                         type=int,
                         help="Update members list from clans. \
-                            Time interval is in seconds, default is once a day",
-                        default=os.environ.get("MEMBERS_UPDATE_INTERVAL", 60*60*24))
+                            Time interval is in seconds, default is once an hour",
+                        default=os.environ.get("MEMBERS_UPDATE_INTERVAL", 60*60))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level.upper())
@@ -276,7 +299,7 @@ def get_arguments() -> argparse.Namespace:
         logger.debug("Attached discord logger")
     logger.debug(args)
     return args
-
+  
 def main() -> None:
     """main"""
     args = get_arguments()
@@ -291,17 +314,21 @@ def main() -> None:
     try:
         logger.info("Starting App")
         limiter = AsyncLimiter(max_rate=args.rate_limit, time_period=1)
-
+        lock = asyncio.Lock()
         clan_queue = asyncio.Queue()
          # get id numbers from clan name from wargames
         loop.create_task(get_clan_ids(args.id, clan_data, limiter,
-                                      args.clan_id_update_interval, clan_queue))
-        loop.create_task(parse_clan_ids(clan_data, clan_queue))
+                                      args.clan_id_update_interval,
+                                      clan_queue,
+                                      lock))
+        loop.create_task(parse_clan_ids(clan_data, clan_queue, lock))
 
         members_queue = asyncio.Queue()
         recruits_queue = asyncio.Queue()
         loop.create_task(get_members(args.id, clan_data, limiter,
-                                     args.clan_id_update_interval, members_queue))
+                                     args.clan_id_update_interval,
+                                     members_queue,
+                                     lock))
         loop.create_task(parse_members(members_queue, recruits_queue))
         loop.create_task(recruit_members(recruits_queue, args.discord_recruit_url))
         loop.run_forever()

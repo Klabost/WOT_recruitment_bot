@@ -83,7 +83,7 @@ async def fetch_ids(app_id: str,
     """ fetch clan data based on clan name,
     if the clan name return multiple values. all values will be added"""
     if clan.clan_id != 0:
-        logger.info("Skipping Clan %s, already have clan ID %s",
+        logger.debug("Skipping Clan %s, already have clan ID %s",
                     clan.name, clan.clan_id)
         return
     current_page = 1
@@ -116,8 +116,9 @@ async def get_clan_ids(app_id: str,
         async with aiohttp.ClientSession() as session:
             tasks = []
             async with lock:
+                logger.info("Updating Clan list")
                 for clan in clans:
-                    logger.info("Fetching Clan ID, Name: %s", clan.name)
+                    logger.debug("Fetching Clan ID, Name: %s", clan.name)
                     tasks.append(
                         fetch_ids(app_id, session, limiter, clan, queue)
                     )
@@ -184,7 +185,7 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
                 for member in tmpclan.members:
                     await recruit_queue.put(("Clan disbanded", member))
             clan.update_values(tmpclan)
-            logger.info("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
+            logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
         except ValidationError as ve:
             logger.error("Error parsing data from Clan %s with id %d, with error %s",
                         clan.name, clan.clan_id, ve.args)
@@ -222,8 +223,9 @@ async def get_members(app_id: str,
         async with aiohttp.ClientSession() as session:
             tasks = []
             async with lock:
+                logger.info("Fetching Member Data")
                 for clan in clans:
-                    logger.info("Fetching Members Data from: %s", clan.name)
+                    logger.debug("Fetching Members Data from: %s", clan.name)
                     tasks.append(
                         fetch_members(app_id, session, limiter, clan, queue)
                     )
@@ -295,7 +297,7 @@ def get_arguments() -> argparse.Namespace:
         discord_formatter = logging.Formatter(fmt="%(message)s",
                                               datefmt='%Y/%m/%d %H:%M:%S')
         discord_handler.setFormatter(discord_formatter)
-        logger.addHandler(discord_handler)
+        # logger.addHandler(discord_handler)
         logger.debug("Attached discord logger")
     logger.debug(args)
     return args
@@ -326,7 +328,7 @@ def main() -> None:
         members_queue = asyncio.Queue()
         recruits_queue = asyncio.Queue()
         loop.create_task(get_members(args.id, clan_data, limiter,
-                                     args.clan_id_update_interval,
+                                     args.members_update_interval,
                                      members_queue,
                                      lock))
         loop.create_task(parse_members(members_queue, recruits_queue))

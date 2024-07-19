@@ -20,6 +20,10 @@ class Clan(BaseModel, str_strip_whitespace=True):
     members_count: int = 0
     members: list[Member] = None
 
+    
+    def __eq__(self, other) -> bool:
+        return self.clan_id == other.clan_id
+    
     def update_values(self, other):
         """update current values"""
         self.is_clan_disbanded = other.is_clan_disbanded
@@ -27,7 +31,7 @@ class Clan(BaseModel, str_strip_whitespace=True):
         self.members_count = other.members_count
         self.members = other.members
 
-    @field_validator('clan_id', mode='before')
+    @field_validator('clan_id', 'members_count', mode='before')
     @classmethod
     def empty_string_to_zero(cls, v: Union[str,int]) -> int:
         """If clan_id is an int, return int. if its a string make it an int

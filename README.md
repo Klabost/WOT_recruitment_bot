@@ -100,26 +100,32 @@ Also copy the datafile containing the clan names to this directory
 ```sh
 cp <datafile_location> ~/Wot_bot
 ```
-Now we will add the application ID and the webhooks to the config file.
-First rename the `env.example` file to `.env`
-Now edit this .env file and file out all empty lines.
-```txt
-LOG_LEVEL=info
-APPLICATION_ID=                 <------------------
-DATAFILE=                       <------------------
-WOT_RATE_LIMIT=10
-DISCORD_LOGGING_WEBHOOK=        <------------------
-DISCORD_RECRUITMENT_WEBHOOK=    <------------------
-```
+
+You can configure the bot by using parameters on the commmand line or by setting environmental variables.
+Command line has precedence over the environmental variables
+
+
+| CLI parameter | ENV equivelant |Default value| Function|
+|---|---|---|---|
+|--log-level|LOG_LEVEL|INFO|Verbosity of the logging (options: critical, warning, error, info, debug)|
+|--data-file| DATAFILE|| filename of csv file with clan names|
+|--rate-limit|WOT_RATE_LIMIT|10| number of request per second to Wargaming API|
+|--discord-logging-url|DISCORD_LOGGING_WEBHOOK| |Webhook to logging channel|
+|--discord-recruit-url|DISCORD_RECRUITMENT_WEBHOOK|| Webhook to recruitment channel|
+|--application-id|APPLICATION_ID||application id of your wargaming application|
+|--clan-id-update-interval|CLAN_ID_UPDATE_INTERVAL| 60\*60\*24\*7| Time in seconds between updating the clan id lits|
+|--members-update-interval|MEMBERS_UPDATE_INTERVAL|60\*60| time in seconds between updating members list from clan|
+
 
 You can change the log level but info will supply you with all the info that you will need for normal operations.
 
 The Wargaming API is also rate limited between 10 request per second and 20. So this is set to the lower value. This doesn't need to be optimised.
 
-The docker compose file will use this .env file to supply the python application running inside a docker container with all the information it needs.
 
 # Running the App
 
+When using the app with docker compose, put all the environmental variables inside a .env file.
+Rename the supplied env.example to .env and set the values that you want to use.
 If all the previous steps where taken then you only need to run.
 
 Small tip. The user inside the docker container is 999, so make sure it has writing permissions for the datafile.

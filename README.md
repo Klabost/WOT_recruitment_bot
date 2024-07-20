@@ -74,13 +74,13 @@ You now have your own handy URL.
 We'll need a csv file containing the names of the clans that are to be monitored.
 
 The file needs the following structure:
-| name|clan_id|is_clan_disbanded|old_name|members_cout|
-| --- | --- |---|---|---|
-| clan 1|   | False| ||
-| clan 2 | | False||
+| name|clan_id|tag|is_clan_disbanded|old_name|members_cout|
+| --- | --- |---|---|---|---|
+| clan 1|   | || ||
+| clan 2 | | |||
 
 
-The application needs to have at least the name specified. All other values will be added by the application if they are empty EXCEPT the is_clan_disanded. This needs to be False at the start. This file will be edited by the application so keep a copy safe somewhere.
+The application needs to have at least the name specified. All other values will be added by the application if they are empty. 
 
 Easiest way to create this file is to create the table in excel or libre calc and then save it as a csv file.
 

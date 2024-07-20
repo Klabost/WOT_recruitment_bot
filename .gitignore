@@ -4,3 +4,4 @@
 __pycache__/
 wot.csv*
 .pylintrc
+wotbot.yaml

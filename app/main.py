@@ -209,10 +209,10 @@ def main() -> None:
                                       args.clan_id_update_interval,
                                       request_queue,
                                       lock))
-        # loop.create_task(get_members(args.id, clan_data,
-        #                              args.members_update_interval,
-        #                              request_queue,
-        #                              lock))
+        loop.create_task(get_members(args.id, clan_data,
+                                     args.members_update_interval,
+                                     request_queue,
+                                     lock))
 
         loop.create_task(recruit_members(recruit_queue, args.discord_recruit_url))
         loop.run_forever()

@@ -120,7 +120,7 @@ async def shutdown(sig: signal.signal, loop: asyncio.BaseEventLoop) -> None:
 
     logger.info("Cancelling %d outstanding tasks", len(tasks))
     await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info("All tasksk successfully canceled")
+    logger.info("All tasks successfully canceled")
     loop.stop()
 
 def get_arguments() -> argparse.Namespace:

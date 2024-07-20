@@ -66,17 +66,17 @@ async def parse_clan_ids(data: List[dict],
                 for clan in clans:
                     if clan.name == requested_clan_name:
                         clan.update_values(new_clan)
-                        logger.info("Found clan_id: %s for clan name: %s",
+                        logger.debug("Found clan_id: %s for clan name: %s",
                                     new_clan.clan_id, new_clan.name)
                         break
                     if clan == new_clan:
                         clan.update_values(new_clan)
-                        logger.info("Found clan_id: %s for clan name: %s",
+                        logger.debug("Found clan_id: %s for clan name: %s",
                                     new_clan.clan_id, new_clan.name)
                         break
                 else:
                     clans.append(new_clan)
-                    logger.info("Found new clan with clan_id: %s and clan name: %s",
+                    logger.debug("Found new clan with clan_id: %s and clan name: %s",
                         new_clan.clan_id, new_clan.name)
         except ValidationError as ve:
             logger.error("Error parsing data: %s with error %s",

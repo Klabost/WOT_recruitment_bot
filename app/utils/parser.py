@@ -21,7 +21,10 @@ async def parse_response(request_queue: asyncio.Queue,
         logger.debug("Parsing response: %s", response)
 
         if len(response) == 0:
-            logger.error("Empty response")
+            if params.get('search'):
+                logger.error("Empty response for search: %s",params.get('search'))
+            elif params.get('clan_id'):
+                logger.error("Empty response for clan_id: %s",params.get('clan_id'))
             response_queue.task_done()
             continue
         if response.get('status') != 'ok':
@@ -29,7 +32,10 @@ async def parse_response(request_queue: asyncio.Queue,
             response_queue.task_done()
             continue
         if not response.get('meta') or response.get('meta').get('count') == 0:
-            logger.error("No result for query: %s", response)
+            if params.get('search'):
+                logger.error("No result for search: %s",params.get('search'))
+            elif params.get('clan_id'):
+                logger.error("No result for clan_id: %s",params.get('clan_id'))
             response_queue.task_done()
             continue
         if response.get('meta').get('total'):

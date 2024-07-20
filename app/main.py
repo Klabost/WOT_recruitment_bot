@@ -141,7 +141,7 @@ async def recruit_members(queue: asyncio.Queue, url: str) -> None:
     according to stackoverflow"""
     limiter = AsyncLimiter(30, 60)
     while True:
-        reason, member = await queue.get()
+        reason, member, clan = await queue.get()
         logger.debug("Sending %s information to discord", member.account_name)
         try:
             async with limiter:
@@ -150,7 +150,8 @@ async def recruit_members(queue: asyncio.Queue, url: str) -> None:
                     stat_url = f"{MEMBER_DETAILS_URL}/{member.account_name}-{member.account_id}/"
                     message = (f"Member found. Name: {member.account_name}, "
                                f"ID: {member.account_id}, stats: {stat_url} ",
-                               f"Reason: {reason}")
+                               f"Reason: {reason}",
+                               f"From Clan: {clan.name} {clan.clan_id}")
                     await webhook.send(message, username='WOT_BOT')
         except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
                 aiohttp.ClientConnectorError ) as se:
@@ -188,11 +189,11 @@ async def parse_members(queue: asyncio.Queue, recruit_queue: asyncio.Queue):
                     if member not in tmpclan.members:
                         logger.info("Found member %s that left the clan: %s",
                                     member.account_name, clan.name)
-                        await recruit_queue.put(('left', member))
+                        await recruit_queue.put(('left', member, clan))
             if not clan.is_clan_disbanded and tmpclan.is_clan_disbanded:
                 logger.info("Clan %s disbanded, All members are potential recruits", clan.name)
                 for member in tmpclan.members:
-                    await recruit_queue.put(("Clan disbanded", member))
+                    await recruit_queue.put(("Clan disbanded", member, clan.copy()))
             clan.update_values(tmpclan)
             logger.debug("Updated values of Clan %s with ID %d", clan.name, clan.clan_id)
         except ValidationError as ve:

@@ -13,3 +13,13 @@ class SaneArgumentParser(argparse.ArgumentParser):
             # Tentatively make this argument required
             kwargs.setdefault("required", True)
         super().add_argument(*args, **kwargs, default=default)
+
+    @classmethod
+    def non_negative_int(cls, value):
+        """
+        Check if the value is a non negative integer.
+        """
+        ivalue = int(value)
+        if ivalue < 0:
+            raise argparse.ArgumentTypeError(f"{value} is an invalid non negative int value")
+        return ivalue

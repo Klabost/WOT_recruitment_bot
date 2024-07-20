@@ -19,6 +19,8 @@ def read_file(filename: str) -> List[Clan]:
             for row in reader:
                 try:
                     logger.debug("File Contents: %s", row)
+                    if not row.get('is_clan_disbanded') or row.get('is_clan_disbanded').isspace():
+                        row['is_clan_disbanded'] = False
                     clan = Clan(**row)
                     clans.append(clan)
                     logger.debug("Clan object content: %s", clan)
@@ -36,7 +38,7 @@ def store_file(clan_data: List[Clan], filename: str) -> None:
         return
     try:
         with open(filename, "w", encoding="utf-8") as csvfile:
-            headers = ["name", "clan_id", "is_clan_disbanded", "old_name","members_count"]
+            headers = ["name", "clan_id", "tag", "is_clan_disbanded", "old_name","members_count"]
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             logger.debug("Writeing file, headers found: %s", headers)

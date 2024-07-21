@@ -129,7 +129,7 @@ def get_arguments() -> argparse.Namespace:
                         type=SaneArgumentParser.non_negative_int,
                         help="Update members list from clans. \
                             Time interval is in seconds, default is once an hour",
-                        default=os.environ.get("MEMBERS_UPDATE_INTERVAL", 60*60))
+                        default=os.environ.get("UPDATE_INTERVAL", 60*60))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level.upper())

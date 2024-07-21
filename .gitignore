@@ -5,3 +5,6 @@ __pycache__/
 wot.csv*
 .pylintrc
 wotbot.yaml
+clan_data.csv
+clan_ids.txt
+dutch_clans.csv

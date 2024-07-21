@@ -19,7 +19,7 @@ async def fetch(url: str,
     for retry in range(max_retries):
         async with limiter:
             async with session.get(url, params=params) as response:
-                if response.status == 429 or response.status == 504:
+                if response.status in (429, 504):
                     backoff_time = pow(2, retry + random.uniform(0,1))
                     await asyncio.sleep(backoff_time)
                 else:

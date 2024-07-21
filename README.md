@@ -71,20 +71,14 @@ You now have your own handy URL.
 ![Screen_Shot_2020-12-15_at_4.51.38_PM.png](https://support.discord.com/hc/article_attachments/360101553853)
 
 ## Data file
-We'll need a csv file containing the names of the clans that are to be monitored.
-
+We'll need a csv file containing the names of the clans that are to be monitored and their Clan ID's.
+generate this file using get_clans.py
 The file needs the following structure:
-| name|clan_id|tag|is_clan_disbanded|old_name|members_cout|
-| --- | --- |---|---|---|---|
-| clan 1|   | || ||
-| clan 2 | | |||
+| name|clan_id|tag|is_clan_disbanded|old_name|members_cout|description|
+| --- | --- |---|---|---|---|---|
+| clan 1| 123  | || |||
+| clan 2 |456 | ||||
 
-
-The application needs to have at least the name specified. All other values will be added by the application if they are empty. 
-
-Easiest way to create this file is to create the table in excel or libre calc and then save it as a csv file.
-
-You can also use the wot_example.csv file.
 
 # Setup
 
@@ -113,8 +107,7 @@ Command line has precedence over the environmental variables
 |--discord-logging-url|DISCORD_LOGGING_WEBHOOK| |Webhook to logging channel|
 |--discord-recruit-url|DISCORD_RECRUITMENT_WEBHOOK|| Webhook to recruitment channel|
 |--application-id|APPLICATION_ID||application id of your wargaming application|
-|--clan-id-update-interval|CLAN_ID_UPDATE_INTERVAL| 60\*60\*24\*7| Time in seconds between updating the clan id lits|
-|--members-update-interval|MEMBERS_UPDATE_INTERVAL|60\*60| time in seconds between updating members list from clan|
+|--update-interval|UPDATE_INTERVAL|60\*60| time in seconds between updating members list from clan|
 
 
 You can change the log level but info will supply you with all the info that you will need for normal operations.

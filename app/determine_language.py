@@ -5,8 +5,8 @@ import string
 import argparse
 import os
 
-from fast_langdetect import detect, detect_multilingual
-
+from fast_langdetect import detect, detect_multilingual, detect_language
+from collections import Counter
 from utils.const import LOGGER_NAME
 from utils.storage import store_file, read_file
 from models import Clan 
@@ -50,7 +50,7 @@ def get_arguments() -> argparse.Namespace:
                         dest="outfile",
                         type=str,
                         help="File clan data will be stored in",
-                        default="dutch_clans.csv")
+                        default="dutch_clans2.csv")
     parser.add_argument("--language",
                         type=str,
                         choices=['en','nl'],
@@ -66,6 +66,7 @@ def get_arguments() -> argparse.Namespace:
 
     logger.debug(args)
     return args
+
 
 def main():
     """main"""
@@ -96,9 +97,33 @@ def main():
             dutch_clans.append(clan)
 
     store_file(dutch_clans, args.outfile)
+    
+def main2():
+    args = get_arguments()
+    clans = read_file(args.infile)
+    dutch_clans = []
+    for clan in clans:
+        lines = clan.description.splitlines()
+        languages = []
+        for line in lines:
+            if len(line) == 0 or line.isspace():
+                continue
+            line = ''.join(filter(lambda x: x in string.printable, line))
+            try:
+                language = detect_language(line, low_memory=False)
+                languages.append(language)
+            except ValueError as ve:
+                logger.error("Error parsing description: %s, Error:%s", clan.description, ve.args)
+        if len(languages) > 0:
+            counter = Counter(languages)
+            if counter.most_common(1)[0][0] == args.language.upper():
+                logger.info("Potential %s Clan: %s",
+                            args.language, clan.name)
+                dutch_clans.append(clan)
+    store_file(dutch_clans, args.outfile)
 
 if __name__ == "__main__":
     try:
-        main()
+        main2()
     except SystemExit as e:
         print(e.code)

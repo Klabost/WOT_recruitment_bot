@@ -19,7 +19,7 @@ async def fetch(url: str,
     for retry in range(max_retries):
         async with limiter:
             async with session.get(url, params=params) as response:
-                if response.status == 429:
+                if response.status == 429 or response.status == 504:
                     backoff_time = pow(2, retry + random.uniform(0,1))
                     await asyncio.sleep(backoff_time)
                 else:
@@ -38,7 +38,7 @@ async def fetcher(request_queue: asyncio.Queue,
                     try:
                         url, params = await request_queue.get()
                         response = await fetch(url, params, session, limiter)
-                        await response_queue.put((response, params))
+                        await response_queue.put(response)
                     finally:
                         request_queue.task_done()
         except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,

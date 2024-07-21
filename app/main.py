@@ -16,9 +16,9 @@ from discord_logging.handler import DiscordHandler
 from discord import Webhook
 
 from sane_argument_parser import SaneArgumentParser
-from clan_data import Clan
+from models import Clan
 
-from utils.const import CLAN_URL, CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME, NO_OF_CONSUMERS, MAX_NUM_OF_IDS
+from utils.const import CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME, NO_OF_CONSUMERS, MAX_NUM_OF_IDS
 from utils.storage import read_file, store_file
 from utils.fetcher import fetcher
 from utils.parser import parse_response
@@ -31,55 +31,27 @@ console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(messag
 console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
 
-async def get_clan_ids(app_id: str,
-                       clans: List[Clan],
-                       update_interval: int,
-                       queue: asyncio.Queue,
-                       lock: asyncio.Lock) -> None:
-    """produces requests for clan ids"""
-    while True:
-        logger.info("Updating Clan list")
-        async with lock:
-            for clan in clans:
-                if clan.clan_id != 0:
-                    logger.debug("Skipping Clan %s, already have clan ID %s",
-                                clan.name, clan.clan_id)
-                    continue
-                logger.debug("Fetching Clan ID, Name: %s", clan.name)
-                params = {
-                    'application_id': app_id,
-                    'search': clan.name,
-                    'page_no': 1,
-                    "fields": "name,clan_id,tag,members_count"
-                }
-                await queue.put((CLAN_URL, params))
-        if update_interval == 0:
-            break
-        await asyncio.sleep(update_interval)
-
 async def get_members(app_id: str,
                       clans: List[Clan],
                       update_interval: int,
-                      queue: asyncio.Queue,
-                      lock: asyncio.Lock) -> None:
+                      queue: asyncio.Queue) -> None:
     """produce requests for member data"""
     while True:
         logger.info("Fetching Member Data")
-        async with lock:
-            # group clan ids in single request to reduce traffic
-            clan_id_list = [clan.clan_id for clan in clans if clan.clan_id != 0]
-            n = MAX_NUM_OF_IDS
-            clan_groups = [clan_id_list[i:i+n] for i in range(0, len(clan_id_list),n)]
-            for group in clan_groups:
-                mapped = map(str, group)
-                clan_ids = ",".join(mapped)
-                logger.debug("Fetching Members Data for clans: %s", clan_ids)
-                params = {
-                    'application_id': app_id,
-                    'clan_id': clan_ids,
-                    "fields": "name,clan_id,old_name,is_clan_disbanded,members_count,members"
-                }
-                await queue.put((CLAN_DETAILS_URL, params))
+        # group clan ids in single request to reduce traffic
+        clan_id_list = [clan.clan_id for clan in clans if clan.clan_id != 0]
+        n = MAX_NUM_OF_IDS
+        clan_groups = [clan_id_list[i:i+n] for i in range(0, len(clan_id_list),n)]
+        for group in clan_groups:
+            mapped = map(str, group)
+            clan_ids = ",".join(mapped)
+            logger.debug("Fetching Members Data for clans: %s", clan_ids)
+            params = {
+                'application_id': app_id,
+                'clan_id': clan_ids,
+                "fields": "name,clan_id,tag,is_clan_disbanded,old_name,members_count,description"
+            }
+            await queue.put((CLAN_DETAILS_URL, params))
         if update_interval == 0:
             break
         await asyncio.sleep(update_interval)
@@ -153,12 +125,7 @@ def get_arguments() -> argparse.Namespace:
                         type=str,
                         help=" id of your Wargaming application",
                         default=os.environ.get("APPLICATION_ID"))
-    parser.add_argument("--clan-id-update-interval",
-                        type=SaneArgumentParser.non_negative_int,
-                        help="Update Clan id associated with clan name. \
-                            Time interval is in seconds, default is once a week",
-                        default=os.environ.get("CLAN_ID_UPDATE_INTERVAL", 60*60*24*7))
-    parser.add_argument("--members-update-interval",
+    parser.add_argument("--update-interval",
                         type=SaneArgumentParser.non_negative_int,
                         help="Update members list from clans. \
                             Time interval is in seconds, default is once an hour",
@@ -182,7 +149,7 @@ def get_arguments() -> argparse.Namespace:
 def main() -> None:
     """main"""
     args = get_arguments()
-    clan_data = read_file(args.data_file)
+    clans = read_file(args.data_file)
     loop = asyncio.get_event_loop()
 
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
@@ -193,33 +160,26 @@ def main() -> None:
     try:
         logger.info("Starting App")
         limiter = AsyncLimiter(max_rate=args.rate_limit, time_period=1)
-        lock = asyncio.Lock()
 
         request_queue = asyncio.Queue()
         response_queue = asyncio.Queue()
         recruit_queue = asyncio.Queue()
         for _ in range(NO_OF_CONSUMERS):
             loop.create_task(fetcher(request_queue,response_queue, limiter))
-            loop.create_task(parse_response(request_queue,
-                                            response_queue,
+            loop.create_task(parse_response(response_queue,
                                             recruit_queue,
-                                            clan_data, lock))
+                                            clans))
 
-        loop.create_task(get_clan_ids(args.id, clan_data,
-                                      args.clan_id_update_interval,
-                                      request_queue,
-                                      lock))
-        loop.create_task(get_members(args.id, clan_data,
-                                     args.members_update_interval,
-                                     request_queue,
-                                     lock))
+        loop.create_task(get_members(args.id, clans,
+                                     args.update_interval,
+                                     request_queue))
 
         loop.create_task(recruit_members(recruit_queue, args.discord_recruit_url))
         loop.run_forever()
     finally:
         loop.close()
         logger.info("Successfully shutdown the WOT recruitment Bot.")
-        store_file(clan_data, args.data_file)
+        store_file(clans, args.data_file)
         sys.exit(0)
 
 if __name__ == "__main__":

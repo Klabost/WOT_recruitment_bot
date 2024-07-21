@@ -4,7 +4,7 @@ import csv
 
 from typing import List
 from pydantic import ValidationError
-from clan_data import Clan
+from models import Clan
 from utils.const import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -25,24 +25,25 @@ def read_file(filename: str) -> List[Clan]:
                     clans.append(clan)
                     logger.debug("Clan object content: %s", clan)
                 except ValidationError as ve:
-                    logger.error("Data-file error, illegal value: %s", ve)
+                    logger.error("Parsing Error. Line: %s, Error: %s", row, ve)
             return clans
     except FileNotFoundError as fnfe:
         logger.error("Data-file error: %s", fnfe.args[1])
         return []
 
-def store_file(clan_data: List[Clan], filename: str) -> None:
+def store_file(clans: List[Clan], filename: str) -> None:
     """Write current dataframe to csv file"""
-    if len(clan_data) == 0:
+    if len(clans) == 0:
         logger.error("Cannot store empty list")
         return
     try:
         with open(filename, "w", encoding="utf-8") as csvfile:
-            headers = ["name", "clan_id", "tag", "is_clan_disbanded", "old_name","members_count"]
+            headers = ["name", "clan_id", "tag", "is_clan_disbanded",
+                       "old_name","members_count", "description"]
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             logger.debug("Writeing file, headers found: %s", headers)
-            for clan in clan_data:
+            for clan in clans:
                 clan_dict = clan.model_dump()
                 filtered_dict = dict((k, clan_dict[k]) for k in headers if k in clan_dict)
                 logger.debug("Clan object to dict Content: %s", filtered_dict)

@@ -1,6 +1,7 @@
 """functions used to read and write to csv file"""
 import logging
 import csv
+import json
 
 from typing import List
 from pydantic import ValidationError
@@ -19,12 +20,12 @@ def read_file(filename: str) -> List[Clan]:
             for row in reader:
                 try:
                     logger.debug("File Contents: %s", row)
-                    if not row.get('is_clan_disbanded') or row.get('is_clan_disbanded').isspace():
-                        row['is_clan_disbanded'] = False
+                    if row.get('members'):
+                        row['members'] = json.loads(row.get('members'))
                     clan = Clan(**row)
                     clans[str(clan.clan_id)] = clan
                     logger.debug("Clan object content: %s", clan)
-                except ValidationError as ve:
+                except (ValidationError, json.JSONDecodeError) as ve:
                     logger.error("Parsing Error. Line: %s, Error: %s", row, ve)
             return clans
     except FileNotFoundError as fnfe:
@@ -39,7 +40,7 @@ def store_file(clans: dict[Clan], filename: str) -> None:
     try:
         with open(filename, "w", encoding="utf-8") as csvfile:
             headers = ["name", "clan_id", "tag", "is_clan_disbanded",
-                       "old_name","members_count", "description"]
+                       "old_name","members_count", "description","members"]
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             logger.debug("Writeing file, headers found: %s", headers)

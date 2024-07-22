@@ -9,7 +9,6 @@ from fast_langdetect import detect, detect_multilingual, detect_language
 from collections import Counter
 from utils.const import LOGGER_NAME
 from utils.storage import store_file, read_file
-from models import Clan 
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -97,8 +96,9 @@ def main():
             dutch_clans.append(clan)
 
     store_file(dutch_clans, args.outfile)
-    
+
 def main2():
+    """main2"""
     args = get_arguments()
     clans = read_file(args.infile)
     dutch_clans = []

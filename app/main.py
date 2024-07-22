@@ -49,7 +49,7 @@ async def get_members(app_id: str,
             params = {
                 'application_id': app_id,
                 'clan_id': clan_ids,
-                "fields": "name,clan_id,tag,is_clan_disbanded,old_name,members_count,description"
+                "fields": "name,clan_id,tag,is_clan_disbanded,old_name,members_count,description,members"
             }
             await queue.put((CLAN_DETAILS_URL, params))
         if update_interval == 0:

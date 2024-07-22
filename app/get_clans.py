@@ -144,9 +144,8 @@ async def start(app_id: str, search: str = None) -> int:
 def get_arguments() -> argparse.Namespace:
     ''' Parse arguments from CLI or if none supplied get them from Environmental variables'''
     parser = argparse.ArgumentParser(
-        prog="Wot_language_detector",
-        description="Query WOT server for all clans and then try \
-            to detect langauge in their description. Unless search is specified")
+        prog="Wot_clan_retriever",
+        description="Query WOT server for all clans. Unless search is specified")
     parser.add_argument('--log-level',
                         choices=['critical', 'warning', 'error', 'info', 'debug'],
                         help="Verbosity of logging",

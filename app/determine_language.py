@@ -4,9 +4,9 @@ import sys
 import string
 import argparse
 import os
+from collections import Counter
 
 from fast_langdetect import detect, detect_multilingual, detect_language
-from collections import Counter
 from utils.const import LOGGER_NAME
 from utils.storage import store_file, read_file
 
@@ -22,8 +22,8 @@ def threshold_range(arg):
     """ Type function for argparse - a float within some predefined bounds """
     try:
         f = float(arg)
-    except ValueError:    
-        raise argparse.ArgumentTypeError("Must be a floating point number")
+    except ValueError as exc:    
+        raise argparse.ArgumentTypeError("Must be a floating point number") from exc
     if f < 0 or f > 1:
         raise argparse.ArgumentTypeError("Argument must be between 0 and 1")
     return f
@@ -32,8 +32,8 @@ def get_arguments() -> argparse.Namespace:
     ''' Parse arguments from CLI or if none supplied get them from Environmental variables'''
     parser = argparse.ArgumentParser(
         prog="Wot_language_detector",
-        description="Query WOT server for all clans and then try \
-            to detect langauge in their description. Unless search is specified")
+        description="Read file containg Clan data and then try \
+            to detect the langauge in their description.")
     parser.add_argument('--log-level',
                         choices=['critical', 'warning', 'error', 'info', 'debug'],
                         help="Verbosity of logging",

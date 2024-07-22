@@ -1,0 +1,3 @@
+name,clan_id,tag,is_clan_disbanded,old_name,members_count,description,members
+clan1,123,,False,,0,,
+clan2,456,,False,,0,,

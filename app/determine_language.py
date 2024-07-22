@@ -40,16 +40,14 @@ def get_arguments() -> argparse.Namespace:
                         default=os.environ.get("LOG_LEVEL", "INFO"))
     parser.add_argument("--input-file",
                         "-i",
-                        dest="infile",
                         type=str,
                         help="File containing clan data",
-                        default="clan_data.csv")
+                        required=True)
     parser.add_argument("--output-file",
                         "-o",
-                        dest="outfile",
                         type=str,
                         help="File clan data will be stored in",
-                        default="dutch_clans2.csv")
+                        required=True)
     parser.add_argument("--language",
                         type=str,
                         choices=['en','nl'],
@@ -100,9 +98,9 @@ def main():
 def main2():
     """main2"""
     args = get_arguments()
-    clans = read_file(args.infile)
+    clans = read_file(args.input_file)
     dutch_clans = []
-    for clan in clans:
+    for clan in clans.values():
         lines = clan.description.splitlines()
         languages = []
         for line in lines:

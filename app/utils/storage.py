@@ -15,23 +15,23 @@ def read_file(filename: str) -> List[Clan]:
         logger.info("Parsing data file: %s", filename)
         with open(filename, "r", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
-            clans = []
+            clans = {}
             for row in reader:
                 try:
                     logger.debug("File Contents: %s", row)
                     if not row.get('is_clan_disbanded') or row.get('is_clan_disbanded').isspace():
                         row['is_clan_disbanded'] = False
                     clan = Clan(**row)
-                    clans.append(clan)
+                    clans[str(clan.clan_id)] = clan
                     logger.debug("Clan object content: %s", clan)
                 except ValidationError as ve:
                     logger.error("Parsing Error. Line: %s, Error: %s", row, ve)
             return clans
     except FileNotFoundError as fnfe:
         logger.error("Data-file error: %s", fnfe.args[1])
-        return []
+        return {}
 
-def store_file(clans: List[Clan], filename: str) -> None:
+def store_file(clans: dict[Clan], filename: str) -> None:
     """Write current dataframe to csv file"""
     if len(clans) == 0:
         logger.error("Cannot store empty list")
@@ -43,7 +43,7 @@ def store_file(clans: List[Clan], filename: str) -> None:
             writer = csv.DictWriter(csvfile, fieldnames=headers, delimiter=',')
             writer.writeheader()
             logger.debug("Writeing file, headers found: %s", headers)
-            for clan in clans:
+            for clan in clans.values():
                 clan_dict = clan.model_dump()
                 filtered_dict = dict((k, clan_dict[k]) for k in headers if k in clan_dict)
                 logger.debug("Clan object to dict Content: %s", filtered_dict)

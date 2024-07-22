@@ -6,7 +6,6 @@ import logging
 import os
 import sys
 import argparse
-from typing import List
 
 import asyncio
 import aiohttp
@@ -32,19 +31,18 @@ console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
 
 async def get_members(app_id: str,
-                      clans: List[Clan],
+                      clans: dict[Clan],
                       update_interval: int,
                       queue: asyncio.Queue) -> None:
     """produce requests for member data"""
     while True:
         logger.info("Fetching Member Data")
         # group clan ids in single request to reduce traffic
-        clan_id_list = [clan.clan_id for clan in clans if clan.clan_id != 0]
+        clan_id_list = list(clans.keys())
         n = MAX_NUM_OF_IDS
         clan_groups = [clan_id_list[i:i+n] for i in range(0, len(clan_id_list),n)]
         for group in clan_groups:
-            mapped = map(str, group)
-            clan_ids = ",".join(mapped)
+            clan_ids = ",".join(group)
             logger.debug("Fetching Members Data for clans: %s", clan_ids)
             params = {
                 'application_id': app_id,

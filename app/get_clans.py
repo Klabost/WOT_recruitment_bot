@@ -6,8 +6,6 @@ import logging
 import argparse
 import sys
 
-from typing import List
-
 import aiohttp
 from aiolimiter import AsyncLimiter
 
@@ -25,9 +23,9 @@ console_foramt = logging.Formatter(fmt="%(asctime)s - [%(levelname)s] - %(messag
 console_handler.setFormatter(console_foramt)
 logger.addHandler(console_handler)
 
-def parse_clan_response(responses: List[dict]) -> List[Clan]:
+def parse_clan_response(responses: list[dict]) -> dict[Clan]:
     """Parse repsonses and create clan list"""
-    clans = []
+    clans = {}
     for response in responses:
         if len(response) == 0:
             logger.error("Empty response")
@@ -36,10 +34,10 @@ def parse_clan_response(responses: List[dict]) -> List[Clan]:
             logger.error("query failed: %s", response.get('error'))
             continue
         data = response.get('data')
-        for _, entry in data.items():
+        for clan_id, entry in data.items():
             try:
                 clan = Clan(**entry)
-                clans.append(clan)
+                clans[clan_id] = clan
             except ValidationError as ve:
                 logger.error("Error parsing data: %s with error %s",
                             entry, ve.args)
@@ -47,7 +45,7 @@ def parse_clan_response(responses: List[dict]) -> List[Clan]:
                 logger.error("Error while parsing member data. Error: %s", te.args)
     return clans
 
-async def get_all_desciptions(app_id: str, clan_ids: List[str]) -> List[Clan]:
+async def get_all_desciptions(app_id: str, clan_ids: list[str]) -> dict[Clan]:
     """Retrieve all clan details"""
     limiter = AsyncLimiter(max_rate=4, time_period=1)
     tasks = []
@@ -57,7 +55,7 @@ async def get_all_desciptions(app_id: str, clan_ids: List[str]) -> List[Clan]:
             params = {
                 'application_id': app_id,
                 'clan_id': clan_group,
-                "fields": "name,clan_id,tag,is_clan_disbanded,old_name,members_count,description"
+                "fields": "name,clan_id,tag,is_clan_disbanded,old_name,members_count,description,members"
             }
             task = fetch(CLAN_DETAILS_URL, params=params, session=session, limiter=limiter)
             tasks.append(task)
@@ -87,7 +85,7 @@ async def get_id(params: dict,
     logger.debug("Parsing page %d", params.get('page_no'))
     return parse_id_response(response)
 
-async def get_all_ids(app_id: str, total_pages: int = 1, search: str = None) -> List[str]:
+async def get_all_ids(app_id: str, total_pages: int = 1, search: str = None) -> list[str]:
     """Retrieve all clan IDs"""
     limiter = AsyncLimiter(max_rate=3, time_period=1)
     tasks = []
@@ -162,7 +160,7 @@ def get_arguments() -> argparse.Namespace:
                         dest="file",
                         type=str,
                         help="File clan data will be stored in",
-                        default="clan_data.csv")
+                        required=True)
     parser.add_argument("--search",
                         type=str,
                         help="If supplied look for clan names with this string in the name.\
@@ -227,7 +225,7 @@ def main() -> None:
         store_file(clans, args.file)
     finally:
         loop.close()
-        logger.info("Successfully shutdown the WOT recruitment Bot.")
+        logger.info("Successfully shutdown get Clans script.")
         sys.exit(0)
 
 if __name__ == "__main__":

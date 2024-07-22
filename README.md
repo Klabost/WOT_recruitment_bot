@@ -2,7 +2,55 @@
 A Bot that monitors clans and notifies a specified Discord channel of members that have left for potential recruitment.
 If a clan is disbanded then all members are considered potential recruits.
 
+# Supplied Scripts
+## get_clans.py
+Retrieves all clan data and store it in a csv file. When supplied with a search string it will only return clans with the specified string inside their clan name.
 
+```
+options:
+  -h, --help            show this help message and exit
+  --log-level {critical,warning,error,info,debug}
+                        Verbosity of logging
+  --application-id ID   id of your Wargaming application
+  --output-file FILE    File clan data will be stored in
+  --search SEARCH       If supplied look for clan names with this string in the name. Else return all clans
+```
+
+## determine_language.py
+Will loop over a file containing clan data and will try to determine the language used inside the description field.
+
+```
+options:
+  -h, --help            show this help message and exit
+  --log-level {critical,warning,error,info,debug}
+                        Verbosity of logging
+  --input-file INPUT_FILE, -i INPUT_FILE
+                        File containing clan data
+  --output-file OUTPUT_FILE, -o OUTPUT_FILE
+                        File clan data will be stored in
+  --language {en,nl}    Determine if the decsription is this language
+  --threshold THRESHOLD
+                        The average score has to be higher then this to be considered valid
+```
+
+## merge_lists.py
+Combines multiple csv files containing clan data into a single file without any duplicates.
+Files that are later in the list will overwrite earlier ones.
+
+```
+options:
+  -h, --help            show this help message and exit
+  -i INPUT_FILES [INPUT_FILES ...], --input-files INPUT_FILES [INPUT_FILES ...]
+                        Files to be merged
+  --output-file OUTPUT_FILE, -o OUTPUT_FILE
+                        File clan data will be stored in
+```
+
+Example:
+```sh
+python merge_lists.py -i clanlist1.csv clanlist2.csv clanlist3.csv -o all_clans.csv
+
+```
 # Requirements
  - Docker
  - Docker Compose
@@ -74,10 +122,12 @@ You now have your own handy URL.
 We'll need a csv file containing the names of the clans that are to be monitored and their Clan ID's.
 generate this file using get_clans.py
 The file needs the following structure:
-| name|clan_id|tag|is_clan_disbanded|old_name|members_cout|description|
-| --- | --- |---|---|---|---|---|
-| clan 1| 123  | || |||
-| clan 2 |456 | ||||
+| name|clan_id|tag|is_clan_disbanded|old_name|members_cout|description|members|
+| --- | --- |---|---|---|---|---|---|
+| clan 1| 123  | || ||||
+| clan 2 |456 | |||||
+
+***generate this list using the supplied python scripts***
 
 
 # Setup

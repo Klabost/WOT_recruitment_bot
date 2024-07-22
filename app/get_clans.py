@@ -165,11 +165,6 @@ def get_arguments() -> argparse.Namespace:
                         help="If supplied look for clan names with this string in the name.\
                             Else return all clans"
                         )
-    parser.add_argument("--language",
-                        type=str,
-                        choices=['en','nl'],
-                        default='nl',
-                        help="Determine if the decsription is this language")
     args = parser.parse_args()
 
     logger.setLevel(args.log_level.upper())

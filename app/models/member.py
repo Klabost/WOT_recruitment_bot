@@ -6,3 +6,6 @@ class Member(BaseModel, str_strip_whitespace=True):
     account_name: str
     account_id: int
     role: str
+
+    def __eq__(self, other) -> bool:
+        return self.account_id==other.account_id

@@ -12,12 +12,16 @@ import aiohttp
 from aiolimiter import AsyncLimiter
 
 from discord_logging.handler import DiscordHandler
-from discord import Webhook
+from discord import Webhook, Embed
 
 from sane_argument_parser import SaneArgumentParser
 from models import Clan
 
-from utils.const import CLAN_DETAILS_URL, MEMBER_DETAILS_URL, LOGGER_NAME, NO_OF_CONSUMERS, MAX_NUM_OF_IDS
+from utils.const import (CLAN_DETAILS_URL,
+                         MEMBER_DETAILS_URL,
+                         LOGGER_NAME,
+                         NO_OF_CONSUMERS,
+                         MAX_NUM_OF_IDS)
 from utils.storage import read_file, store_file
 from utils.fetcher import fetcher
 from utils.parser import parse_response
@@ -67,12 +71,15 @@ async def recruit_members(queue: asyncio.Queue, url: str) -> None:
                 async with limiter:
                     async with aiohttp.ClientSession() as session:
                         webhook = Webhook.from_url(url, session=session)
-                        stat_url = f"{MEMBER_DETAILS_URL}/{member.account_name}-{member.account_id}/"
-                        message = (f"Member found. Name: {member.account_name}, "
-                                f"ID: {member.account_id}, stats: {stat_url} ",
-                                f"Reason: {reason}",
-                                f"From Clan: {clan.name} {clan.clan_id}")
-                        await webhook.send(message, username='WOT_BOT')
+                        stat_url = f"{MEMBER_DETAILS_URL}{member.account_name}-{member.account_id}/"
+                        message = "Member Found:\n"\
+                                f"Name: {member.account_name}\n"\
+                                f"ID: {member.account_id}\n"\
+                                f"Reason: {reason}\n"\
+                                f"From Clan: {clan.name} {clan.clan_id}\n"\
+                                f"stats: {stat_url}"
+                        embed = Embed(title=message,color=2196944)
+                        await webhook.send(embed=embed, username='WOT_BOT')
         except (aiohttp.ServerDisconnectedError, aiohttp.ClientResponseError,
                 aiohttp.ClientConnectorError ) as se:
             logger.error("Error sending Data to discord recruit channel. Error: %s",se.message)
@@ -173,6 +180,7 @@ def main() -> None:
                                      request_queue))
 
         loop.create_task(recruit_members(recruit_queue, args.discord_recruit_url))
+
         loop.run_forever()
     finally:
         loop.close()

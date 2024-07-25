@@ -1,0 +1,3 @@
+[submodule "app/discord_logging"]
+	path = app/discord_logging
+	url = https://github.com/Klabost/discord_logging
